@@ -103,30 +103,30 @@ async def resolve_public_chat(chat_username: str, context: ContextTypes.DEFAULT_
     return chat.id
 
 # ================================
-#  Command handlers
+#  Command handlers (now using HTML)
 # ================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 *Message Forwarder Bot*\n\n"
+        "👋 <b>Message Forwarder Bot</b>\n\n"
         "I can forward messages from private groups/channels to any chat you choose.\n\n"
-        "🔹 Add a source:\n"
-        "   /add\\_forward – step‑by‑step guide\n"
-        "🔹 Bulk add (multiple links at once):\n"
-        "   /bulk\\_add\n"
-        "🔹 List your rules:\n"
+        "🔹 <b>Add a source:</b>\n"
+        "   /add_forward – step‑by‑step guide\n"
+        "🔹 <b>Bulk add</b> (multiple links at once):\n"
+        "   /bulk_add\n"
+        "🔹 <b>List your rules:</b>\n"
         "   /list\n"
-        "🔹 Remove a rule:\n"
+        "🔹 <b>Remove a rule:</b>\n"
         "   /remove",
-        parse_mode=ParseMode.MARKDOWN_V2,
+        parse_mode=ParseMode.HTML,
     )
 
 async def add_forward_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Send me a link to **any message** from the source chat\\.\n"
-        "Example: `https://t\\.me/c/123456789/1234?thread=567`\n\n"
-        "For topic groups, include the `?thread=` part if you want to forward only that topic\\.\n"
-        "If you omit the thread, I will forward only the *General* topic\\.",
-        parse_mode=ParseMode.MARKDOWN_V2,
+        "Send me a link to <b>any message</b> from the source chat.\n"
+        "Example: <code>https://t.me/c/123456789/1234?thread=567</code>\n\n"
+        "For topic groups, include the <code>?thread=</code> part if you want to forward only that topic.\n"
+        "If you omit the thread, I will forward only the <i>General</i> topic.",
+        parse_mode=ParseMode.HTML,
     )
     context.user_data["awaiting_link"] = True
 
@@ -144,10 +144,10 @@ async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         "Where should I forward the messages?\n"
         "Reply with:\n"
-        "• `here` → forward to this chat\n"
-        "• a chat ID (e.g. `-1001234567890`) or username (e.g. `@my_channel`)\n\n"
-        "*(Make sure I am a member of the destination chat)*",
-        parse_mode=ParseMode.MARKDOWN_V2,
+        "• <code>here</code> → forward to this chat\n"
+        "• a chat ID (e.g. <code>-1001234567890</code>) or username (e.g. <code>@my_channel</code>)\n\n"
+        "<i>(Make sure I am a member of the destination chat)</i>",
+        parse_mode=ParseMode.HTML,
     )
     context.user_data["awaiting_dest"] = True
 
@@ -202,11 +202,11 @@ async def bulk_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Paste all message links (one per line).\n\n"
         "Example:\n"
-        "https://t.me/c/111/222\n"
-        "https://t.me/c/333/444?thread=55\n"
-        "https://t.me/username/666\n\n"
+        "<code>https://t.me/c/111/222</code>\n"
+        "<code>https://t.me/c/333/444?thread=55</code>\n"
+        "<code>https://t.me/username/666</code>\n\n"
         "Then I will ask for the destination chat.",
-        parse_mode=ParseMode.MARKDOWN_V2,
+        parse_mode=ParseMode.HTML,
     )
     context.user_data["awaiting_bulk"] = True
 
@@ -216,11 +216,11 @@ async def list_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rules:
         await update.message.reply_text("You have no forwarding rules.")
         return
-    lines = ["*Your forwarding rules:*"]
+    lines = ["<b>Your forwarding rules:</b>"]
     for idx, (rule_id, src_chat, thread, dest_chat) in enumerate(rules, 1):
         thread_str = "All topics" if thread == -1 else f"Thread {thread}" if thread is not None else "General"
-        lines.append(f"{idx}. `{src_chat}` ({thread_str}) → `{dest_chat}`  (ID: {rule_id})")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN_V2)
+        lines.append(f"{idx}. <code>{src_chat}</code> ({thread_str}) → <code>{dest_chat}</code>  (ID: {rule_id})")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 async def remove_rule_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -239,7 +239,7 @@ async def remove_rule_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Rule not found or not yours.")
 
 # ================================
-#  Forwarding logic
+#  Forwarding logic (unchanged)
 # ================================
 async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
@@ -279,7 +279,7 @@ async def health(request):
     return web.Response(text="Bot is running")
 
 # ================================
-#  Main entry point (no event loop nesting)
+#  Main entry point
 # ================================
 async def main():
     logging.basicConfig(
@@ -294,33 +294,30 @@ async def main():
 
     PORT = int(os.environ.get("PORT", "8443"))
 
-    # Initialize the database
     await init_db()
 
-    # Build the PTB application
     app = Application.builder().token(TOKEN).build()
 
-    # --- Command handlers ---
+    # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add_forward", add_forward_start))
     app.add_handler(CommandHandler("bulk_add", bulk_add_start))
     app.add_handler(CommandHandler("list", list_rules))
     app.add_handler(CommandHandler("remove", remove_rule_cmd))
 
-    # --- Conversation‑style message handlers ---
+    # Conversation‑style message handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link_message), group=1)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_dest_reply), group=1)
 
-    # --- Global forwarder (lower priority) ---
+    # Global forwarder
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, forward_handler), group=2)
 
-    # Initialize and start the bot
     await app.initialize()
     await app.start()
     await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
     logging.info("Bot polling started")
 
-    # --- Start aiohttp health server ---
+    # Health server
     health_app = web.Application()
     health_app.router.add_get("/", health)
     runner = web.AppRunner(health_app)
@@ -329,18 +326,16 @@ async def main():
     await site.start()
     logging.info(f"Health server started on port {PORT}")
 
-    # Wait until a termination signal is received
+    # Graceful shutdown
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, stop_event.set)
         except NotImplementedError:
-            # Windows does not support add_signal_handler, ignore
             pass
     await stop_event.wait()
 
-    # --- Graceful shutdown ---
     logging.info("Shutting down...")
     await app.updater.stop()
     await app.stop()
