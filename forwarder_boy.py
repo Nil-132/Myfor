@@ -5,6 +5,7 @@ import os
 from typing import Optional, List, Tuple
 
 import aiosqlite
+from aiohttp import web
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -271,7 +272,25 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"Forward error {src_chat_id}→{dest}: {e}")
 
 # ================================
-#  Main
+#  Dummy HTTP server for Render health checks
+# ================================
+async def health(request):
+    return web.Response(text="Bot is running")
+
+async def dummy_server(port: int):
+    """Run a minimal aiohttp server to keep Render happy."""
+    app = web.Application()
+    app.router.add_get("/", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Health server started on port {port}")
+    # Keep the server alive forever
+    await asyncio.Event().wait()
+
+# ================================
+#  Main entry point
 # ================================
 async def main():
     logging.basicConfig(
@@ -284,24 +303,34 @@ async def main():
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN environment variable not set")
 
-    # Ensure DB is ready
+    # Render provides PORT, default to 8443 for local testing
+    PORT = int(os.environ.get("PORT", "8443"))
+
+    # Initialize the database
     await init_db()
 
+    # Build the PTB application
     app = Application.builder().token(TOKEN).build()
 
-    # Handlers
+    # --- Command handlers ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add_forward", add_forward_start))
     app.add_handler(CommandHandler("bulk_add", bulk_add_start))
     app.add_handler(CommandHandler("list", list_rules))
     app.add_handler(CommandHandler("remove", remove_rule_cmd))
 
+    # --- Conversation‑style message handlers ---
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link_message), group=1)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_dest_reply), group=1)
+
+    # --- Global forwarder (lower priority) ---
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, forward_handler), group=2)
 
-    # Start polling
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Start polling + dummy health server together
+    await asyncio.gather(
+        app.run_polling(allowed_updates=Update.ALL_TYPES),
+        dummy_server(PORT),
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
