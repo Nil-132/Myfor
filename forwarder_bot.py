@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import os
+import signal
 from typing import Optional, List, Tuple
 
 import aiosqlite
@@ -272,25 +273,13 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"Forward error {src_chat_id}→{dest}: {e}")
 
 # ================================
-#  Dummy HTTP server for Render health checks
+#  Health check endpoint
 # ================================
 async def health(request):
     return web.Response(text="Bot is running")
 
-async def dummy_server(port: int):
-    """Run a minimal aiohttp server to keep Render happy."""
-    app = web.Application()
-    app.router.add_get("/", health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logging.info(f"Health server started on port {port}")
-    # Keep the server alive forever
-    await asyncio.Event().wait()
-
 # ================================
-#  Main entry point
+#  Main entry point (no event loop nesting)
 # ================================
 async def main():
     logging.basicConfig(
@@ -303,7 +292,6 @@ async def main():
     if not TOKEN:
         raise RuntimeError("BOT_TOKEN environment variable not set")
 
-    # Render provides PORT, default to 8443 for local testing
     PORT = int(os.environ.get("PORT", "8443"))
 
     # Initialize the database
@@ -326,11 +314,39 @@ async def main():
     # --- Global forwarder (lower priority) ---
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, forward_handler), group=2)
 
-    # Start polling + dummy health server together
-    await asyncio.gather(
-        app.run_polling(allowed_updates=Update.ALL_TYPES),
-        dummy_server(PORT),
-    )
+    # Initialize and start the bot
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    logging.info("Bot polling started")
+
+    # --- Start aiohttp health server ---
+    health_app = web.Application()
+    health_app.router.add_get("/", health)
+    runner = web.AppRunner(health_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    logging.info(f"Health server started on port {PORT}")
+
+    # Wait until a termination signal is received
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+        except NotImplementedError:
+            # Windows does not support add_signal_handler, ignore
+            pass
+    await stop_event.wait()
+
+    # --- Graceful shutdown ---
+    logging.info("Shutting down...")
+    await app.updater.stop()
+    await app.stop()
+    await app.shutdown()
+    await runner.cleanup()
+    logging.info("Shutdown complete")
 
 if __name__ == "__main__":
     asyncio.run(main())
