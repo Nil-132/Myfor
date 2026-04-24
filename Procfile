@@ -1,1 +1,1 @@
-worker: python forwarder_bot.py
+web: python forwarder_bot.py
